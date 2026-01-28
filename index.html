@@ -66,7 +66,27 @@
         const urlParams = new URLSearchParams(window.location.search);
         const isJudge = urlParams.get('role') === 'judge';
         let hasWon = false;
+// --- AUDIO UNLOCK (copy exactly) ---
+    let audioUnlocked = false;
 
+    function unlockAudioOnce() {
+        if (audioUnlocked) return;
+
+        document.querySelectorAll('audio').forEach(sound => {
+            sound.volume = 0;
+            sound.play().then(() => {
+                sound.pause();
+                sound.currentTime = 0;
+                sound.volume = 1;
+            }).catch(() => {});
+        });
+
+        audioUnlocked = true;
+    }
+
+    document.addEventListener('click', unlockAudioOnce);
+    document.addEventListener('keydown', unlockAudioOnce);
+    // --- END AUDIO UNLOCK ---
         if (isJudge) {
             document.getElementById('board-view').style.display = 'none';
             document.getElementById('judge-view').style.display = 'block';
