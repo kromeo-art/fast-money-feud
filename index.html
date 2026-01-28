@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Fast Money: Professional Edition</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { background: #000; color: #fff; font-family: 'Arial Black', sans-serif; text-align: center; margin: 0; }
+        #board-view { display: block; height: 100vh; background: radial-gradient(circle, #001f3f, #000); }
+        #judge-view { display: none; background: #222; padding: 20px; color: white; }
+        .row { display: flex; justify-content: center; margin: 10px; height: 60px; }
+        .slot, .points { background: #001f3f; border: 2px solid #0074D9; display: flex; align-items: center; justify-content: center; font-size: 28px; color: transparent; text-transform: uppercase; }
+        .slot { width: 400px; margin-right: 10px; padding-left: 15px; justify-content: flex-start; }
+        .points { width: 80px; }
+        .revealed { color: #FFDC00 !important; border-color: #FFDC00 !important; text-shadow: 2px 2px #000; }
+        .timer { font-size: 90px; color: #ff3e3e; font-family: monospace; height: 110px; }
+        .total { font-size: 80px; color: #FFDC00; margin-top: 20px; }
+        .ctrl-row { background: #333; padding: 10px; margin: 5px; border-radius: 8px; display: flex; gap: 10px; align-items: center; justify-content: center; }
+        button { padding: 10px; cursor: pointer; font-weight: bold; }
+        .duplicate-btn { background: #FF851B; color: white; width: 100%; padding: 20px; font-size: 20px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+    <div id="board-view">
+        <div class="timer" id="timer-disp">--</div>
+        <div id="board-container"></div>
+        <div class="total">TOTAL: <span id="grand-total">0</span></div>
+    </div>
+
+    <div id="judge-view">
+        <button class="duplicate-btn" onclick="sendAction('duplicate')">DUPLICATE ANSWER (Sound Only)</button>
+        <div style="display:flex; gap: 20px; justify-content: center; margin-bottom: 20px;">
+            <button onclick="sendTimer(20)" style="background:red; color:white;">START 20s</button>
+            <button onclick="sendTimer(25)" style="background:red; color:white;">START 25s</button>
+        </div>
+        <div id="judge-inputs"></div>
+    </div>
+
+    <audio id="sfx-ans-reveal" src="fm-Answer-Reveal.wav"></audio>
+    <audio id="sfx-duplicate" src="fm-Duplicate.wav"></audio>
+    <audio id="sfx-pts-reveal" src="fm-Points-Reveal.wav"></audio>
+    <audio id="sfx-zero" src="fm-Zero-Points.wav"></audio>
+    <audio id="sfx-win" src="fm-win.wav"></audio>
+    <audio id="sfx-20" src="20-sec.wav"></audio>
+    <audio id="sfx-25" src="25-sec.wav"></audio>
+    <audio id="sfx-buzzer" src="buzzer.wav"></audio>
+
+    <script>
+        const socket = io();
+        const urlParams = new URLSearchParams(window.location.search);
+        const isJudge = urlParams.get('role') === 'judge';
+        let hasWon = false;
+
+        if (isJudge) {
+            document.getElementById('board-view').style.display = 'none';
+            document.getElementById('judge-view').style.display = 'block';
+        }
+
+        for (let i = 0; i < 10; i++) {
+            document.getElementById('board-container').innerHTML += `
+                <div class="row">
+                    <div class="slot" id="ans-${i}"></div>
+                    <div class="points" id="pts-${i}">0</div>
+                </div>`;
+            document.getElementById('judge-inputs').innerHTML += `
+                <div class="ctrl-row">
+                    <span>Q${i+1}</span>
+                    <input id="in-ans-${i}" placeholder="Answer">
+                    <button onclick="sendAction('reveal-ans', ${i})">REVEAL ANS</button>
+                    <input id="in-pts-${i}" type="number" placeholder="Pts" style="width:50px">
+                    <button onclick="sendAction('reveal-pts', ${i})">REVEAL PTS</button>
+                </div>`;
+        }
+
+        function sendAction(type, index) {
+            const data = {
+                type: type,
+                index: index,
+                ans: index !== undefined ? document.getElementById('in-ans-'+index).value : '',
+                pts: index !== undefined ? document.getElementById('in-pts-'+index).value : 0
+            };
+            socket.emit('reveal-action', data);
+        }
+
+        function sendTimer(s) { socket.emit('start-timer', s); }
+
+        socket.on('show-on-board', (data) => {
+            const a = document.getElementById('ans-'+data.index);
+            const p = document.getElementById('pts-'+data.index);
+            
+            if (data.type === 'reveal-ans') {
+                a.innerText = data.ans;
+                a.classList.add('revealed');
+                document.getElementById('sfx-ans-reveal').play();
+            } 
+            else if (data.type === 'reveal-pts') {
+                p.innerText = data.pts;
+                p.classList.add('revealed');
+                const pts = parseInt(data.pts);
+                if (pts > 0) document.getElementById('sfx-pts-reveal').play();
+                else document.getElementById('sfx-zero').play();
+                calcTotal();
+            }
+            else if (data.type === 'duplicate') {
+                document.getElementById('sfx-duplicate').play();
+            }
+        });
+
+        socket.on('run-timer', (s) => {
+            let count = s;
+            const t = document.getElementById('timer-disp');
+            const sound = document.getElementById('sfx-' + s);
+            if(sound) sound.play();
+            
+            const itv = setInterval(() => {
+                count--;
+                t.innerText = count;
+                if(count <= 0) { 
+                    clearInterval(itv); 
+                    document.getElementById('sfx-buzzer').play();
+                }
+            }, 1000);
+        });
+
+        function calcTotal() {
+            let t = 0;
+            document.querySelectorAll('.points.revealed').forEach(el => t += parseInt(el.innerText) || 0);
+            document.getElementById('grand-total').innerText = t;
+            if (t >= 200 && !hasWon) {
+                hasWon = true;
+                document.getElementById('sfx-win').play();
+            }
+        }
+    </script>
+</body>
+</html>
