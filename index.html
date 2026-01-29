@@ -5,34 +5,41 @@
     <script src="/socket.io/socket.io.js"></script>
     <style>
         body { background: #000; color: #fff; font-family: 'Arial Black', sans-serif; text-align: center; margin: 0; overflow: hidden; }
+        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); z-index: 100; display: flex; align-items: center; justify-content: center; flex-direction: column; }
+        #overlay button { padding: 30px 60px; font-size: 30px; background: #FFDC00; border: none; cursor: pointer; border-radius: 15px; font-weight: bold; box-shadow: 0 0 20px #FFDC00; }
         
-        /* Sound Unlock Overlay */
-        #overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 100; display: flex; align-items: center; justify-content: center; }
-        #overlay button { padding: 20px 40px; font-size: 24px; background: #FFDC00; color: #000; border: none; cursor: pointer; border-radius: 10px; font-weight: bold; }
-
         #board-view { display: flex; flex-direction: column; height: 100vh; background: radial-gradient(circle, #001f3f, #000); padding: 20px; box-sizing: border-box; }
-        .timer { font-size: 80px; color: #ff3e3e; font-family: monospace; margin-bottom: 10px; height: 100px; }
+        .timer { font-size: 80px; color: #ff3e3e; font-family: monospace; height: 100px; }
         .board-container { display: flex; justify-content: center; gap: 40px; flex-grow: 1; }
         .column { width: 45%; }
         .row { display: flex; margin-bottom: 15px; height: 65px; }
         .slot, .points { background: #001f3f; border: 3px solid #0074D9; display: flex; align-items: center; font-size: 32px; color: transparent; text-transform: uppercase; }
         .slot { flex: 4; padding-left: 20px; border-right: none; }
         .points { flex: 1; justify-content: center; border-left: 2px solid #0074D9; }
+        
+        /* The Magic "Visible" Class */
         .revealed { color: #FFDC00 !important; border-color: #FFDC00 !important; text-shadow: 2px 2px #000; box-shadow: 0 0 15px #FFDC00; }
+        .hidden-temp { visibility: hidden !important; } /* For the toggle */
+        
         .total-area { font-size: 70px; color: #FFDC00; margin-top: 10px; border-top: 2px solid #333; padding-top: 10px; }
 
-        #judge-view { display: none; background: #222; padding: 20px; text-align: left; overflow-y: auto; height: 100vh; }
-        .judge-col { border: 1px solid #444; padding: 10px; margin-bottom: 20px; border-radius: 10px; }
+        /* Judge Panel */
+        #judge-view { display: none; background: #222; padding: 20px; height: 100vh; overflow-y: auto; text-align: center; }
+        .judge-grid { display: flex; justify-content: center; gap: 20px; }
+        .judge-col { border: 1px solid #444; padding: 10px; border-radius: 10px; background: #333; }
         .ctrl-row { display: flex; gap: 5px; margin-bottom: 8px; }
-        button { padding: 10px; cursor: pointer; font-weight: bold; border-radius: 4px; border: none; }
+        button { padding: 12px; cursor: pointer; font-weight: bold; border-radius: 6px; border: none; }
         .btn-blue { background: #0074D9; color: white; }
         .btn-green { background: #2ECC40; color: white; }
-        .btn-red { background: #FF4136; color: white; padding: 15px; }
+        .btn-main { padding: 20px; font-size: 18px; margin: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="overlay"><button onclick="enableSound()">CLICK TO SYNC & ENABLE SOUND</button></div>
+    <div id="overlay">
+        <h1 style="color:white">READY TO PLAY?</h1>
+        <button onclick="enableSound()">START GAME & ENABLE SOUND</button>
+    </div>
 
     <div id="board-view">
         <div class="timer" id="timer-disp">00</div>
@@ -44,13 +51,13 @@
     </div>
 
     <div id="judge-view">
-        <div style="text-align:center; margin-bottom: 20px;">
-            <button class="btn-red" onclick="sendTimer(20)">START 20s</button>
-            <button class="btn-red" onclick="sendTimer(25)">START 25s</button>
-            <button class="btn-red" style="background:#FF851B" onclick="sendAction('duplicate')">DUPLICATE</button>
-            <button class="btn-red" style="background:#7FDBFF; color:black" onclick="sendAction('hide-all')">HIDE ANSWERS</button>
+        <div style="margin-bottom: 20px;">
+            <button class="btn-main" style="background:#FF4136; color:white;" onclick="sendTimer(20)">20s TIMER</button>
+            <button class="btn-main" style="background:#FF4136; color:white;" onclick="sendTimer(25)">25s TIMER</button>
+            <button class="btn-main" style="background:#FF851B; color:white;" onclick="sendAction('duplicate')">DUPLICATE!!</button>
+            <button id="toggle-p1-btn" class="btn-main" style="background:#B10DC9; color:white;" onclick="toggleP1()">HIDE PLAYER 1</button>
         </div>
-        <div id="judge-sections"></div>
+        <div class="judge-grid" id="judge-sections"></div>
     </div>
 
     <audio id="sfx-ans-reveal" src="fm-Answer-Reveal.wav" preload="auto"></audio>
@@ -66,6 +73,7 @@
         const socket = io();
         const urlParams = new URLSearchParams(window.location.search);
         const isJudge = urlParams.get('role') === 'judge';
+        let p1Visible = true;
 
         if (isJudge) {
             document.getElementById('overlay').style.display = 'none';
@@ -75,26 +83,26 @@
 
         function enableSound() {
             document.getElementById('overlay').style.display = 'none';
-            // Play a silent sound to wake up audio context
-            const silent = document.getElementById('sfx-ans-reveal');
-            silent.muted = true;
-            silent.play().then(() => { silent.muted = false; });
+            // Play and pause all sounds to unlock them for the browser
+            document.querySelectorAll('audio').forEach(m => {
+                m.play().then(() => { m.pause(); m.currentTime = 0; }).catch(() => {});
+            });
         }
 
         for (let col = 0; col < 2; col++) {
-            let judgeHtml = `<div class="judge-col"><h3>Player ${col+1}</h3>`;
+            let judgeHtml = `<div class="judge-col"><h3>PLAYER ${col+1}</h3>`;
             for (let row = 0; row < 5; row++) {
                 let id = (col * 5) + row;
                 document.getElementById('col-' + col).innerHTML += `
-                    <div class="row">
+                    <div class="row" id="row-box-${id}">
                         <div class="slot" id="ans-${id}"></div>
                         <div class="points" id="pts-${id}">0</div>
                     </div>`;
                 judgeHtml += `
                     <div class="ctrl-row">
-                        <input id="in-ans-${id}" placeholder="Ans ${row+1}" style="width:120px">
+                        <input id="in-ans-${id}" placeholder="Ans ${row+1}" style="width:100px">
                         <button class="btn-blue" onclick="sendAction('reveal-ans', ${id})">ANS</button>
-                        <input id="in-pts-${id}" type="number" placeholder="Pts" style="width:50px">
+                        <input id="in-pts-${id}" type="number" placeholder="Pts" style="width:45px">
                         <button class="btn-green" onclick="sendAction('reveal-pts', ${id})">PTS</button>
                     </div>`;
             }
@@ -110,11 +118,27 @@
             });
         }
 
+        function toggleP1() {
+            p1Visible = !p1Visible;
+            document.getElementById('toggle-p1-btn').innerText = p1Visible ? "HIDE PLAYER 1" : "REVEAL PLAYER 1";
+            socket.emit('reveal-action', { type: 'toggle-p1', state: p1Visible });
+        }
+
         function sendTimer(s) { socket.emit('start-timer', s); }
 
         socket.on('show-on-board', (data) => {
-            if (data.type === 'hide-all') {
-                document.querySelectorAll('.slot, .points').forEach(el => el.classList.remove('revealed'));
+            if (data.type === 'toggle-p1') {
+                for(let i=0; i<5; i++) {
+                    const el = document.getElementById('row-box-'+i);
+                    data.state ? el.classList.remove('hidden-temp') : el.classList.add('hidden-temp');
+                }
+                return;
+            }
+
+            if (data.type === 'duplicate') {
+                const sfx = document.getElementById('sfx-duplicate');
+                sfx.currentTime = 0;
+                sfx.play();
                 return;
             }
             
@@ -124,17 +148,14 @@
             if (data.type === 'reveal-ans') {
                 a.innerText = data.ans;
                 a.classList.add('revealed');
-                document.getElementById('sfx-ans-reveal').play().catch(e => console.log("Sound error:", e));
+                document.getElementById('sfx-ans-reveal').play();
             } 
             else if (data.type === 'reveal-pts') {
                 p.innerText = data.pts;
                 p.classList.add('revealed');
-                if (parseInt(data.pts) > 0) document.getElementById('sfx-pts-reveal').play();
-                else document.getElementById('sfx-zero').play();
+                const pts = parseInt(data.pts);
+                document.getElementById(pts > 0 ? 'sfx-pts-reveal' : 'sfx-zero').play();
                 calcTotal();
-            }
-            else if (data.type === 'duplicate') {
-                document.getElementById('sfx-duplicate').play();
             }
         });
 
@@ -143,7 +164,6 @@
             const t = document.getElementById('timer-disp');
             const sound = document.getElementById('sfx-' + s);
             if(sound) sound.play();
-            
             const itv = setInterval(() => {
                 count--;
                 t.innerText = (count < 10 ? '0' : '') + count;
@@ -156,7 +176,6 @@
 
         function calcTotal() {
             let t = 0;
-            // Only count points that are currently visible (revealed)
             document.querySelectorAll('.points.revealed').forEach(el => t += parseInt(el.innerText) || 0);
             document.getElementById('grand-total').innerText = t;
             if (t >= 200) document.getElementById('sfx-win').play();
